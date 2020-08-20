@@ -250,6 +250,11 @@ out:
 		lnk->sz = 0;
 		return;
 	}
+	// Link keep alive
+	if (strncmp(lnk->buf, "KeepAlive\r\n", 11) == 0) {
+		lnk->sz = 0;
+		return;
+	}
 }
 
 void stream_left(struct stream *strm)
