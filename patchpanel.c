@@ -56,6 +56,7 @@ struct stream {
 // global
 #define MAX_LINKS (256)
 #define MAX_STREAMS (256)
+#define NO_ACTIVITY_TIME (8 * 60 * 60) // 8h
 struct link links[MAX_LINKS];
 struct stream streams[MAX_STREAMS];
 
@@ -128,6 +129,8 @@ void handle_request(struct link *lnk)
 	int ret = read(lnk->sock, &lnk->buf[lnk->sz], rest);
 
 	if (ret <= 0) {
+		if (lnk->name[0] != 1)
+			printf("link %s closed\n", lnk->name);
 		// free it
 		lnk->name[0] = 0;
 		close(lnk->sock);
@@ -272,8 +275,11 @@ void stream_left(struct stream *strm)
 		return;
 	}
 	// forward to right
-	if (strm->right >= 0)
-		write(strm->right, buf, ret);
+	if (strm->right >= 0) {
+		int w = write(strm->right, buf, ret);
+		if (w > 0)
+			gettimeofday(&strm->rtv, NULL);
+	}
 }
 
 void stream_right(struct stream *strm)
@@ -291,8 +297,11 @@ void stream_right(struct stream *strm)
 		return;
 	}
 	// forward to left
-	if (strm->left >= 0)
-		write(strm->left, buf, ret);
+	if (strm->left >= 0) {
+		int w = write(strm->left, buf, ret);
+		if (w > 0)
+			gettimeofday(&strm->ltv, NULL);
+	}
 }
 
 void mainloop(int s)
@@ -380,11 +389,11 @@ void mainloop(int s)
 		// check last recv
 		int disconnect = 0;
 		if (strm->left >= 0) {
-			if ((tv.tv_sec - strm->ltv.tv_sec) > 300)
+			if ((tv.tv_sec - strm->ltv.tv_sec) > NO_ACTIVITY_TIME)
 				disconnect = 1;
 		}
 		if (strm->right >= 0) {
-			if ((tv.tv_sec - strm->rtv.tv_sec) > 300)
+			if ((tv.tv_sec - strm->rtv.tv_sec) > NO_ACTIVITY_TIME)
 				disconnect = 1;
 		}
 		if (disconnect == 0)
