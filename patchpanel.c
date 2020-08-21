@@ -10,7 +10,27 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 #include <errno.h>
+
+static inline void ldatetime(char *dt, int sz)
+{
+	time_t t = time(NULL);
+	struct tm *tmp = localtime(&t);
+	if (!tmp)
+		strcpy(dt, "-");
+	else
+		strftime(dt, sz, "%F %T", tmp);
+}
+
+#define logf(...) \
+	do { \
+		char dt[80]; \
+		ldatetime(dt, sizeof(dt)); \
+		fprintf(stderr, "%s ", dt); \
+		fprintf(stderr, __VA_ARGS__); \
+		fflush(stderr); \
+	} while (0)
 
 int listensocket(char *arg)
 {
@@ -106,11 +126,11 @@ void new_connection(int s)
 	int sock = accept(s, (struct sockaddr *)&addr, &len);
 	if (sock < 0)
 		return;
-	printf("accepted %d\n", sock);
+	logf("accepted %d\n", sock);
 
 	struct link *lnk = find_emptylink();
 	if (lnk == NULL) {
-		printf("link slot full\n");
+		logf("link slot full\n");
 		close(sock);
 		return;
 	}
@@ -130,7 +150,7 @@ void handle_request(struct link *lnk)
 
 	if (ret <= 0) {
 		if (lnk->name[0] != 1)
-			printf("link %s closed\n", lnk->name);
+			logf("link %s closed\n", lnk->name);
 		// free it
 		lnk->name[0] = 0;
 		close(lnk->sock);
@@ -157,7 +177,7 @@ void handle_request(struct link *lnk)
 			lnk->name[0] = 1;
 			return;
 		}
-		printf("LINK %s\n", lnk->name);
+		logf("LINK %s\n", lnk->name);
 		// clear
 		lnk->sz = 0;
 		return;
@@ -176,11 +196,11 @@ void handle_request(struct link *lnk)
 			lnk->name[0] = 1;
 			return;
 		}
-		printf("CONNECTED %s\n", lnk->name);
+		logf("CONNECTED %s\n", lnk->name);
 		// connect to stream
 		struct stream *strm = find_stream(lnk->name);
 		if (strm == NULL) {
-			printf("no waiting stream %s\n", lnk->name);
+			logf("no waiting stream %s\n", lnk->name);
 			close(lnk->sock);
 			lnk->name[0] = 0;
 			lnk->sock = -1;
@@ -217,19 +237,19 @@ void handle_request(struct link *lnk)
 		strcpy(name, lnk->name);
 		// clear to prevent that it hit in search
 		lnk->name[0] = 0;
-		printf("CONNECT %s\n", name);
+		logf("CONNECT %s\n", name);
 		// create stream
 		struct stream *strm = find_emptystream();
 		char *resp = "HTTP/1.0 400 Bad Request\r\n\r\n";
 		// keep sock variable here to handle error and correct
 		int sock = lnk->sock;
 		if (strm == NULL) {
-			printf("no empty stream slot\n");
+			logf("no empty stream slot\n");
 			goto out;
 		}
 		struct link *rlnk = find_link(name);
 		if (rlnk == NULL) {
-			printf("no such link %s\n", lnk->name);
+			logf("no such link %s\n", lnk->name);
 			goto out;
 		}
 		strm->link = rlnk;
@@ -241,7 +261,7 @@ void handle_request(struct link *lnk)
 		// prevent close at end
 		lnk->sock = -1;
 		// send request
-		printf("request to %s %d\n", rlnk->name, rlnk->sock);
+		logf("request to %s %d\n", rlnk->name, rlnk->sock);
 		write(rlnk->sock, "NEW\r\n", 5);
 		// ok
 		resp = "HTTP/1.0 200 Established\r\n\r\n";
@@ -267,7 +287,7 @@ void stream_left(struct stream *strm)
 	int ret = read(strm->left, buf, 4096);
 	if (ret <= 0) {
 		// will close
-		printf("stream %s close left\n", strm->link->name);
+		logf("stream %s close left\n", strm->link->name);
 		close(strm->left);
 		strm->left = -1;
 		close(strm->right);
@@ -289,7 +309,7 @@ void stream_right(struct stream *strm)
 	int ret = read(strm->right, buf, 4096);
 	if (ret <= 0) {
 		// will close
-		printf("stream %s close right\n", strm->link->name);
+		logf("stream %s close right\n", strm->link->name);
 		close(strm->right);
 		strm->right = -1;
 		close(strm->left);
@@ -381,7 +401,7 @@ void mainloop(int s)
 		if (strm->link == NULL)
 			continue;
 		if (strm->left == -1 && strm->right == -1) {
-			printf("close stream %s\n", strm->link->name);
+			logf("close stream %s\n", strm->link->name);
 			strm->link = NULL;
 			strm->connected = 0;
 			continue;
@@ -398,7 +418,7 @@ void mainloop(int s)
 		}
 		if (disconnect == 0)
 			continue;
-		printf("no activity %s\n", strm->link->name);
+		logf("no activity %s\n", strm->link->name);
 		close(strm->left);
 		strm->left = -1;
 		close(strm->right);
@@ -424,12 +444,10 @@ void init(void)
 
 int main(int argc, char **argv)
 {
-	setbuf(stdout, NULL);
-
 	char *laddr = ":8800";
 	if (argc > 1)
 		laddr = argv[1];
-	printf("start patchpanel %s\n", laddr);
+	logf("start patchpanel %s\n", laddr);
 
 	int sock = listensocket(laddr);
 	if (sock < 0)
