@@ -278,6 +278,17 @@ out:
 		lnk->sz = 0;
 		return;
 	}
+	// unknown?
+	char *crlf = strstr(lnk->buf, "\r\n");
+	if (crlf != NULL) {
+		*crlf = 0;
+		logf("%d unknown command %s\n", lnk->sock, lnk->buf);
+		// free it
+		lnk->name[0] = 0;
+		close(lnk->sock);
+		lnk->sock = -1;
+		return;
+	}
 }
 
 void stream_left(struct stream *strm)
