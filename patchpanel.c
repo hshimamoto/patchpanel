@@ -250,6 +250,7 @@ void handle_request(struct link *lnk)
 		struct link *rlnk = find_link(name);
 		if (rlnk == NULL) {
 			logf("no such link %s\n", lnk->name);
+			resp = "HTTP/1.0 404 Not found\r\n\r\n";
 			goto out;
 		}
 		strm->link = rlnk;
