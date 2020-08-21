@@ -375,7 +375,7 @@ void mainloop(int s)
 	tv.tv_sec = 60;
 	tv.tv_usec = 0;
 
-	int ret = select(max, &fds, NULL, NULL, NULL);
+	int ret = select(max, &fds, NULL, NULL, &tv);
 	if (ret < 0)
 		return;
 
@@ -391,7 +391,19 @@ void mainloop(int s)
 			continue;
 		if (FD_ISSET(lnk->sock, &fds)) {
 			handle_request(lnk);
-			return;
+			continue;
+		}
+	}
+	for (int i = 0; i < MAX_LINKS; i++) {
+		struct link *lnk = &links[i];
+		if (lnk->name[0] == 0)
+			continue;
+		if ((tv.tv_sec - lnk->tv.tv_sec) > 100) {
+			logf("no command from %d\n", lnk->sock);
+			lnk->name[0] = 0;
+			close(lnk->sock);
+			lnk->sock = -1;
+			continue;
 		}
 	}
 	for (int i = 0; i < MAX_STREAMS; i++) {
