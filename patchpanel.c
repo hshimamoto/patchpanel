@@ -143,6 +143,7 @@ void new_connection(int s)
 
 void close_stream(struct stream *strm)
 {
+	logf("close_stream left %d right %d\n", strm->left, strm->right);
 	close(strm->left);
 	close(strm->right);
 	strm->left = -1;
@@ -427,7 +428,7 @@ void mainloop(int s)
 		if (strm->link == NULL)
 			continue;
 		if (strm->left == -1 && strm->right == -1) {
-			logf("close stream %s\n", strm->link->name);
+			logf("stream %s disconnected\n", strm->link->name);
 			strm->link = NULL;
 			strm->connected = 0;
 			continue;
