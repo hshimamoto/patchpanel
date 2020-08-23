@@ -141,6 +141,14 @@ void new_connection(int s)
 	gettimeofday(&lnk->tv, NULL);
 }
 
+void close_stream(struct stream *strm)
+{
+	close(strm->left);
+	close(strm->right);
+	strm->left = -1;
+	strm->right = -1;
+}
+
 void handle_request(struct link *lnk)
 {
 	gettimeofday(&lnk->tv, NULL); // mark
@@ -300,10 +308,7 @@ void stream_left(struct stream *strm)
 	if (ret <= 0) {
 		// will close
 		logf("stream %s close left\n", strm->link->name);
-		close(strm->left);
-		strm->left = -1;
-		close(strm->right);
-		strm->right = -1;
+		close_stream(strm);
 		return;
 	}
 	// forward to right
@@ -322,10 +327,7 @@ void stream_right(struct stream *strm)
 	if (ret <= 0) {
 		// will close
 		logf("stream %s close right\n", strm->link->name);
-		close(strm->right);
-		strm->right = -1;
-		close(strm->left);
-		strm->left = -1;
+		close_stream(strm);
 		return;
 	}
 	// forward to left
@@ -443,10 +445,7 @@ void mainloop(int s)
 		if (disconnect == 0)
 			continue;
 		logf("no activity %s\n", strm->link->name);
-		close(strm->left);
-		strm->left = -1;
-		close(strm->right);
-		strm->right = -1;
+		close_stream(strm);
 		strm->link = NULL;
 		strm->connected = 0;
 	}
