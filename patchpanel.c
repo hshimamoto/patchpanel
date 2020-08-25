@@ -143,11 +143,19 @@ void new_connection(int s)
 
 void close_stream(struct stream *strm)
 {
-	logf("close_stream left %d right %d\n", strm->left, strm->right);
+	char *name = "unknown";
+	if (strm->link == NULL)
+		logf("close_stream: ???");
+	else
+		name = strm->link->name;
+	logf("close_stream %s left %d right %d\n",
+			name, strm->left, strm->right);
 	close(strm->left);
 	close(strm->right);
 	strm->left = -1;
 	strm->right = -1;
+	strm->link = NULL;
+	strm->connected = 0;
 }
 
 void handle_request(struct link *lnk)
@@ -218,6 +226,9 @@ void handle_request(struct link *lnk)
 		strm->right = lnk->sock;
 		gettimeofday(&strm->rtv, NULL);
 		strm->connected = 1;
+		logf("stream is established %s left %d right %d\n",
+				strm->link->name,
+				strm->left, strm->right);
 		lnk->name[0] = 0;
 		lnk->sock = -1;
 		lnk->sz = 0;
@@ -417,9 +428,9 @@ void mainloop(int s)
 		if (strm->connected == 0)
 			continue;
 		int left = strm->left;
-		int right = strm->right;
 		if (left >= 0 && FD_ISSET(left, &fds))
 			stream_left(strm);
+		int right = strm->right;
 		if (right >= 0 && FD_ISSET(right, &fds))
 			stream_right(strm);
 	}
@@ -447,8 +458,6 @@ void mainloop(int s)
 			continue;
 		logf("no activity %s\n", strm->link->name);
 		close_stream(strm);
-		strm->link = NULL;
-		strm->connected = 0;
 	}
 }
 
