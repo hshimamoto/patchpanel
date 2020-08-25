@@ -76,7 +76,9 @@ struct stream {
 // global
 #define MAX_LINKS (256)
 #define MAX_STREAMS (256)
-#define NO_ACTIVITY_TIME (8 * 60 * 60) // 8h
+#define NO_COMMAND_TIME   (100) // 100sec
+#define NO_CONNECTED_TIME (10)  // 10sec
+#define NO_ACTIVITY_TIME  (8 * 60 * 60) // 8h
 struct link links[MAX_LINKS];
 struct stream streams[MAX_STREAMS];
 
@@ -413,7 +415,7 @@ void mainloop(int s)
 		struct link *lnk = &links[i];
 		if (lnk->name[0] == 0)
 			continue;
-		if ((tv.tv_sec - lnk->tv.tv_sec) > 100) {
+		if ((tv.tv_sec - lnk->tv.tv_sec) > NO_COMMAND_TIME) {
 			logf("no command from %d\n", lnk->sock);
 			lnk->name[0] = 0;
 			close(lnk->sock);
@@ -444,14 +446,15 @@ void mainloop(int s)
 			strm->connected = 0;
 			continue;
 		}
-		// check last recv
+		// check from last recv
+		int timeout = strm->connected ? NO_ACTIVITY_TIME : NO_CONNECTED_TIME;
 		int disconnect = 0;
 		if (strm->left >= 0) {
-			if ((tv.tv_sec - strm->ltv.tv_sec) > NO_ACTIVITY_TIME)
+			if ((tv.tv_sec - strm->ltv.tv_sec) > timeout)
 				disconnect = 1;
 		}
 		if (strm->right >= 0) {
-			if ((tv.tv_sec - strm->rtv.tv_sec) > NO_ACTIVITY_TIME)
+			if ((tv.tv_sec - strm->rtv.tv_sec) > timeout)
 				disconnect = 1;
 		}
 		if (disconnect == 0)
