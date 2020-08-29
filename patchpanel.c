@@ -416,7 +416,11 @@ void mainloop(int s)
 		if (lnk->name[0] == 0)
 			continue;
 		if ((tv.tv_sec - lnk->tv.tv_sec) > NO_COMMAND_TIME) {
-			logf("no command from %d\n", lnk->sock);
+			char *name = "-";
+			if (lnk->name[0] != 1) {
+				name = lnk->name;
+			}
+			logf("no command from %s %d\n", name, lnk->sock);
 			lnk->name[0] = 0;
 			close(lnk->sock);
 			lnk->sock = -1;
