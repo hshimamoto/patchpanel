@@ -168,8 +168,10 @@ void handle_request(struct link *lnk)
 	int ret = read(lnk->sock, &lnk->buf[lnk->sz], rest);
 
 	if (ret <= 0) {
+		char *name = "-";
 		if (lnk->name[0] != 1)
-			logf("link %s closed\n", lnk->name);
+			name = lnk->name;
+		logf("link %s %d closed\n", name, lnk->sock);
 		// free it
 		lnk->name[0] = 0;
 		close(lnk->sock);
