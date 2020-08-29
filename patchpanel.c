@@ -128,7 +128,7 @@ void new_connection(int s)
 	int sock = accept(s, (struct sockaddr *)&addr, &len);
 	if (sock < 0)
 		return;
-	logf("accepted %d\n", sock);
+	logf("accepted %d from %s\n", sock, inet_ntoa(addr.sin_addr));
 
 	struct link *lnk = find_emptylink();
 	if (lnk == NULL) {
