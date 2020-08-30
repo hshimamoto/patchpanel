@@ -61,6 +61,7 @@ struct link {
 	char name[256];
 	int sock;
 	struct timeval tv; // last
+	struct timeval tv_linked; // start of this link
 	// temporary buffer
 	char buf[256];
 	int sz;
@@ -71,6 +72,7 @@ struct stream {
 	int connected;
 	int left, right; // socket for Left side and Right side
 	struct timeval ltv, rtv; // last
+	struct timeval tv_est; // established
 };
 
 // global
@@ -141,6 +143,49 @@ void new_connection(int s)
 	lnk->sock = sock;
 	lnk->sz = 0;
 	gettimeofday(&lnk->tv, NULL);
+	gettimeofday(&lnk->tv_linked, NULL);
+}
+
+void get_duration(char *buf, int n, struct timeval *prev)
+{
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	int duration = now.tv_sec - prev->tv_sec;
+	if (duration < 600) {
+		int ms = (now.tv_usec - prev->tv_usec) / 1000;
+		if (ms < 0) {
+			ms += 1000;
+			duration++;
+		}
+		snprintf(buf, 32, "%d.%03ds", duration, ms);
+	} else if (duration < 3600) {
+		snprintf(buf, 32, "%dm", duration / 60);
+	} else if (duration < 12 * 3600) {
+		int h = duration / 3600;
+		int m = (duration / 60) % 60;
+		snprintf(buf, 32, "%dh %dm", h, m);
+	} else {
+		snprintf(buf, 32, "%dh", duration / 3600);
+	}
+}
+
+void close_link(struct link *lnk)
+{
+	int sock = lnk->sock;
+	lnk->sock = -1;
+
+	if (sock == -1)
+		goto out;
+
+	char *name = lnk->name;
+	if (name[0] == 0 || name[0] == 1)
+		name = "-";
+	char buf[32];
+	get_duration(buf, 32, &lnk->tv_linked);
+	logf("close_link %s %d [%s]\n", name, sock, buf);
+	close(sock);
+out:
+	lnk->name[0] = 0;
 }
 
 void close_stream(struct stream *strm)
@@ -150,8 +195,10 @@ void close_stream(struct stream *strm)
 		logf("close_stream: ???");
 	else
 		name = strm->link->name;
-	logf("close_stream %s left %d right %d\n",
-			name, strm->left, strm->right);
+	char buf[32];
+	get_duration(buf, 32, &strm->tv_est);
+	logf("close_stream %s left %d right %d [%s]\n",
+			name, strm->left, strm->right, buf);
 	close(strm->left);
 	close(strm->right);
 	strm->left = -1;
@@ -168,14 +215,7 @@ void handle_request(struct link *lnk)
 	int ret = read(lnk->sock, &lnk->buf[lnk->sz], rest);
 
 	if (ret <= 0) {
-		char *name = "-";
-		if (lnk->name[0] != 1)
-			name = lnk->name;
-		logf("link %s %d closed\n", name, lnk->sock);
-		// free it
-		lnk->name[0] = 0;
-		close(lnk->sock);
-		lnk->sock = -1;
+		close_link(lnk);
 		return;
 	}
 
@@ -221,7 +261,7 @@ void handle_request(struct link *lnk)
 		// connect to stream
 		struct stream *strm = find_stream(lnk->name);
 		if (strm == NULL) {
-			logf("no waiting stream %s\n", lnk->name);
+			logf("no waiting stream for %s\n", lnk->name);
 			close(lnk->sock);
 			lnk->name[0] = 0;
 			lnk->sock = -1;
@@ -230,6 +270,7 @@ void handle_request(struct link *lnk)
 		strm->right = lnk->sock;
 		gettimeofday(&strm->rtv, NULL);
 		strm->connected = 1;
+		gettimeofday(&strm->tv_est, NULL);
 		logf("stream is established %s left %d right %d\n",
 				strm->link->name,
 				strm->left, strm->right);
@@ -292,10 +333,7 @@ void handle_request(struct link *lnk)
 		resp = "HTTP/1.0 200 Established\r\n\r\n";
 out:
 		write(sock, resp, strlen(resp));
-		close(lnk->sock);
-		lnk->name[0] = 0;
-		lnk->sock = -1;
-		lnk->sz = 0;
+		close_link(lnk);
 		return;
 	}
 	// Link keep alive
@@ -308,10 +346,7 @@ out:
 	if (crlf != NULL) {
 		*crlf = 0;
 		logf("%d unknown command %s\n", lnk->sock, lnk->buf);
-		// free it
-		lnk->name[0] = 0;
-		close(lnk->sock);
-		lnk->sock = -1;
+		close_link(lnk);
 		return;
 	}
 }
@@ -423,9 +458,7 @@ void mainloop(int s)
 				name = lnk->name;
 			}
 			logf("no command from %s %d\n", name, lnk->sock);
-			lnk->name[0] = 0;
-			close(lnk->sock);
-			lnk->sock = -1;
+			close_link(lnk);
 			continue;
 		}
 	}
