@@ -541,6 +541,8 @@ int main(int argc, char **argv)
 		laddr = argv[1];
 	logf("start patchpanel %s\n", laddr);
 
+	signal(SIGPIPE, SIG_IGN);
+
 	int sock = listensocket(laddr);
 	if (sock < 0)
 		return 1;
