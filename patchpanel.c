@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <stdio.h>
@@ -131,6 +132,22 @@ void new_connection(int s)
 	if (sock < 0)
 		return;
 	logf("accepted %d from %s\n", sock, inet_ntoa(addr.sin_addr));
+
+	int optval;
+	socklen_t optlen = sizeof(optval);
+
+	optval = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0)
+		logf("set keepalive failed: %d\n", errno);
+	optval = 60;
+	if (setsockopt(sock, SOL_TCP, TCP_KEEPIDLE, &optval, optlen) < 0)
+		logf("set keepalive: keepidle failed: %d\n", errno);
+	optval = 6;
+	if (setsockopt(sock, SOL_TCP, TCP_KEEPCNT, &optval, optlen) < 0)
+		logf("set keepalive: keepcnt failed: %d\n", errno);
+	optval = 10;
+	if (setsockopt(sock, SOL_TCP, TCP_KEEPINTVL, &optval, optlen) < 0)
+		logf("set keepalive: keepintvl failed: %d\n", errno);
 
 	struct link *lnk = find_emptylink();
 	if (lnk == NULL) {
