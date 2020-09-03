@@ -254,6 +254,16 @@ void handle_request(struct link *lnk)
 		logf("LINK %s\n", lnk->name);
 		// clear
 		lnk->sz = 0;
+		// check OLD links
+		for (int i = 0; i < MAX_LINKS; i++) {
+			struct link *tmp = &links[i];
+			if (lnk == tmp)
+				continue;
+			if (strcmp(lnk->name, tmp->name))
+				continue;
+			logf("mark %s %d old\n", tmp->name, tmp->sock);
+			tmp->name[0] = '~';
+		}
 		return;
 	}
 	if (strncmp(lnk->buf, "CONNECTED ", 10) == 0) {
