@@ -69,7 +69,8 @@ struct link {
 };
 
 struct stream {
-	struct link *link; // correspond link
+	int used; // used flag
+	char name[256]; // keep name
 	int connected;
 	int left, right; // socket for Left side and Right side
 	struct timeval ltv, rtv; // last
@@ -106,7 +107,7 @@ struct link *find_link(char *name)
 struct stream *find_emptystream(void)
 {
 	for (int i = 0; i < MAX_STREAMS; i++) {
-		if (streams[i].link == NULL)
+		if (streams[i].used == 0)
 			return &streams[i];
 	}
 	return NULL;
@@ -115,9 +116,9 @@ struct stream *find_emptystream(void)
 struct stream *find_stream(char *name)
 {
 	for (int i = 0; i < MAX_STREAMS; i++) {
-		if (streams[i].link == NULL || streams[i].right != -1)
+		if (streams[i].used == 0 || streams[i].right != -1)
 			continue;
-		if (strcmp(streams[i].link->name, name) == 0)
+		if (strcmp(streams[i].name, name) == 0)
 			return &streams[i];
 	}
 	return NULL;
@@ -207,20 +208,15 @@ out:
 
 void close_stream(struct stream *strm)
 {
-	char *name = "unknown";
-	if (strm->link == NULL)
-		logf("close_stream: ???");
-	else
-		name = strm->link->name;
 	char buf[32];
 	get_duration(buf, 32, &strm->tv_est);
 	logf("close_stream %s left %d right %d [%s]\n",
-			name, strm->left, strm->right, buf);
+			strm->name, strm->left, strm->right, buf);
 	close(strm->left);
 	close(strm->right);
 	strm->left = -1;
 	strm->right = -1;
-	strm->link = NULL;
+	strm->used = 0;
 	strm->connected = 0;
 }
 
@@ -289,8 +285,7 @@ void handle_request(struct link *lnk)
 		strm->connected = 1;
 		gettimeofday(&strm->tv_est, NULL);
 		logf("stream is established %s left %d right %d\n",
-				strm->link->name,
-				strm->left, strm->right);
+				strm->name, strm->left, strm->right);
 		lnk->name[0] = 0;
 		lnk->sock = -1;
 		lnk->sz = 0;
@@ -315,27 +310,27 @@ void handle_request(struct link *lnk)
 			lnk->name[0] = 1;
 			return;
 		}
-		char name[256];
-		strcpy(name, lnk->name);
-		// clear to prevent that it hit in search
-		lnk->name[0] = 0;
-		logf("CONNECT %s\n", name);
+		char *resp = "HTTP/1.0 400 Bad Request\r\n\r\n";
 		// create stream
 		struct stream *strm = find_emptystream();
-		char *resp = "HTTP/1.0 400 Bad Request\r\n\r\n";
-		// keep sock variable here to handle error and correct
-		int sock = lnk->sock;
 		if (strm == NULL) {
 			logf("no empty stream slot\n");
 			goto out;
 		}
-		struct link *rlnk = find_link(name);
+		// copy request link name
+		strncpy(strm->name, lnk->name, 256);
+		logf("CONNECT %s\n", strm->name);
+		// keep sock variable here to handle error and correct
+		int sock = lnk->sock;
+		// clear to prevent that it hit in search
+		lnk->name[0] = 0;
+		struct link *rlnk = find_link(strm->name);
 		if (rlnk == NULL) {
-			logf("no such link %s\n", lnk->name);
+			logf("no such link %s\n", strm->name);
 			resp = "HTTP/1.0 404 Not found\r\n\r\n";
 			goto out;
 		}
-		strm->link = rlnk;
+		strm->used = 1;
 		strm->left = sock;
 		strm->right = -1;
 		strm->connected = 0;
@@ -375,7 +370,7 @@ void stream_left(struct stream *strm)
 	int ret = read(strm->left, buf, 4096);
 	if (ret <= 0) {
 		// will close
-		logf("stream %s close left\n", strm->link->name);
+		logf("stream %s close left\n", strm->name);
 		close_stream(strm);
 		return;
 	}
@@ -394,7 +389,7 @@ void stream_right(struct stream *strm)
 	int ret = read(strm->right, buf, 4096);
 	if (ret <= 0) {
 		// will close
-		logf("stream %s close right\n", strm->link->name);
+		logf("stream %s close right\n", strm->name);
 		close_stream(strm);
 		return;
 	}
@@ -423,7 +418,7 @@ void mainloop(int s)
 	}
 	for (int i = 0; i < MAX_STREAMS; i++) {
 		struct stream *strm = &streams[i];
-		if (strm->link == NULL)
+		if (strm->used == 0)
 			continue;
 		if (strm->connected == 0)
 			continue;
@@ -481,7 +476,7 @@ void mainloop(int s)
 	}
 	for (int i = 0; i < MAX_STREAMS; i++) {
 		struct stream *strm = &streams[i];
-		if (strm->link == NULL)
+		if (strm->used == 0)
 			continue;
 		if (strm->connected == 0)
 			continue;
@@ -494,11 +489,12 @@ void mainloop(int s)
 	}
 	for (int i = 0; i < MAX_STREAMS; i++) {
 		struct stream *strm = &streams[i];
-		if (strm->link == NULL)
+		if (strm->used == 0)
 			continue;
 		if (strm->left == -1 && strm->right == -1) {
-			logf("stream %s disconnected\n", strm->link->name);
-			strm->link = NULL;
+			// should not happen
+			logf("stream %s disconnected\n", strm->name);
+			strm->used = 0;
 			strm->connected = 0;
 			continue;
 		}
@@ -515,7 +511,7 @@ void mainloop(int s)
 		}
 		if (disconnect == 0)
 			continue;
-		logf("no activity %s\n", strm->link->name);
+		logf("no activity %s\n", strm->name);
 		close_stream(strm);
 	}
 }
@@ -527,7 +523,7 @@ void init(void)
 		links[i].sock = -1;
 	}
 	for (int i = 0; i < MAX_STREAMS; i++) {
-		streams[i].link = NULL;
+		streams[i].used = 0;
 		streams[i].connected = 0;
 		streams[i].left = -1;
 		streams[i].right = -1;
