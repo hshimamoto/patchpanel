@@ -73,7 +73,7 @@ struct stream {
 	char name[256]; // keep name
 	int connected;
 	int left, right; // socket for Left side and Right side
-	struct timeval ltv, rtv; // last
+	struct timeval tv;
 	// statistics
 	struct timeval tv_est; // established
 	long bytes_l2r, bytes_r2l; // transfer size
@@ -295,7 +295,7 @@ void handle_request(struct link *lnk)
 			return;
 		}
 		strm->right = lnk->sock;
-		gettimeofday(&strm->rtv, NULL);
+		gettimeofday(&strm->tv, NULL);
 		strm->connected = 1;
 		strm->bytes_l2r = 0;
 		strm->bytes_r2l = 0;
@@ -350,7 +350,7 @@ void handle_request(struct link *lnk)
 		strm->left = sock;
 		strm->right = -1;
 		strm->connected = 0;
-		gettimeofday(&strm->ltv, NULL);
+		gettimeofday(&strm->tv, NULL);
 		// sock has been passed to stream
 		// prevent close at end
 		lnk->sock = -1;
@@ -379,46 +379,45 @@ out:
 	}
 }
 
+int transfer(struct stream *strm, int rfd, int wfd)
+{
+	char buf[4096];
+	int r = read(rfd, buf, 4096);
+	if (r <= 0)
+		return -1;
+	int w = write(wfd, buf, r);
+	if (w <= 0)
+		return -1;
+	gettimeofday(&strm->tv, NULL);
+	return w;
+}
+
 void stream_left(struct stream *strm)
 {
-	gettimeofday(&strm->ltv, NULL);
-	char buf[4096];
-	int ret = read(strm->left, buf, 4096);
-	if (ret <= 0) {
-		// will close
+	if (strm->right < 0)
+		return;
+	// forward to right
+	int bytes = transfer(strm, strm->left, strm->right);
+	if (bytes == -1) {
 		logf("stream %s close left\n", strm->name);
 		close_stream(strm);
 		return;
 	}
-	// forward to right
-	if (strm->right >= 0) {
-		int w = write(strm->right, buf, ret);
-		if (w > 0) {
-			gettimeofday(&strm->rtv, NULL);
-			strm->bytes_l2r += w;
-		}
-	}
+	strm->bytes_l2r += bytes;
 }
 
 void stream_right(struct stream *strm)
 {
-	gettimeofday(&strm->rtv, NULL);
-	char buf[4096];
-	int ret = read(strm->right, buf, 4096);
-	if (ret <= 0) {
-		// will close
+	if (strm->left < 0)
+		return;
+	// forward to right
+	int bytes = transfer(strm, strm->right, strm->left);
+	if (bytes == -1) {
 		logf("stream %s close right\n", strm->name);
 		close_stream(strm);
 		return;
 	}
-	// forward to left
-	if (strm->left >= 0) {
-		int w = write(strm->left, buf, ret);
-		if (w > 0) {
-			gettimeofday(&strm->ltv, NULL);
-			strm->bytes_r2l += w;
-		}
-	}
+	strm->bytes_r2l += bytes;
 }
 
 void mainloop(int s)
@@ -521,12 +520,8 @@ void mainloop(int s)
 		// check from last recv
 		int timeout = strm->connected ? NO_ACTIVITY_TIME : NO_CONNECTED_TIME;
 		int disconnect = 0;
-		if (strm->left >= 0) {
-			if ((tv.tv_sec - strm->ltv.tv_sec) > timeout)
-				disconnect = 1;
-		}
-		if (strm->right >= 0) {
-			if ((tv.tv_sec - strm->rtv.tv_sec) > timeout)
+		if (strm->left >= 0 || strm->right >= 0) {
+			if ((tv.tv_sec - strm->tv.tv_sec) > timeout)
 				disconnect = 1;
 		}
 		if (disconnect == 0)
