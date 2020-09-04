@@ -326,6 +326,8 @@ void handle_request(struct link *lnk)
 			lnk->name[0] = 1;
 			return;
 		}
+		// keep sock variable here to handle error and correct
+		int sock = lnk->sock;
 		char *resp = "HTTP/1.0 400 Bad Request\r\n\r\n";
 		// create stream
 		struct stream *strm = find_emptystream();
@@ -336,8 +338,6 @@ void handle_request(struct link *lnk)
 		// copy request link name
 		strncpy(strm->name, lnk->name, 256);
 		logf("CONNECT %s\n", strm->name);
-		// keep sock variable here to handle error and correct
-		int sock = lnk->sock;
 		// clear to prevent that it hit in search
 		lnk->name[0] = 0;
 		struct link *rlnk = find_link(strm->name);
