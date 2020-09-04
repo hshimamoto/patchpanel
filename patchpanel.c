@@ -74,7 +74,9 @@ struct stream {
 	int connected;
 	int left, right; // socket for Left side and Right side
 	struct timeval ltv, rtv; // last
+	// statistics
 	struct timeval tv_est; // established
+	long bytes_l2r, bytes_r2l; // transfer size
 };
 
 // global
@@ -210,8 +212,9 @@ void close_stream(struct stream *strm)
 {
 	char buf[32];
 	get_duration(buf, 32, &strm->tv_est);
-	logf("close_stream %s left %d right %d [%s]\n",
-			strm->name, strm->left, strm->right, buf);
+	logf("close_stream %s left %d right %d [%s] %ld <=> %ld\n",
+			strm->name, strm->left, strm->right, buf,
+			strm->bytes_r2l, strm->bytes_l2r);
 	close(strm->left);
 	close(strm->right);
 	strm->left = -1;
@@ -293,6 +296,8 @@ void handle_request(struct link *lnk)
 		strm->right = lnk->sock;
 		gettimeofday(&strm->rtv, NULL);
 		strm->connected = 1;
+		strm->bytes_l2r = 0;
+		strm->bytes_r2l = 0;
 		gettimeofday(&strm->tv_est, NULL);
 		logf("stream is established %s left %d right %d\n",
 				strm->name, strm->left, strm->right);
@@ -387,8 +392,10 @@ void stream_left(struct stream *strm)
 	// forward to right
 	if (strm->right >= 0) {
 		int w = write(strm->right, buf, ret);
-		if (w > 0)
+		if (w > 0) {
 			gettimeofday(&strm->rtv, NULL);
+			strm->bytes_l2r += w;
+		}
 	}
 }
 
@@ -406,8 +413,10 @@ void stream_right(struct stream *strm)
 	// forward to left
 	if (strm->left >= 0) {
 		int w = write(strm->left, buf, ret);
-		if (w > 0)
+		if (w > 0) {
 			gettimeofday(&strm->ltv, NULL);
+			strm->bytes_r2l += w;
+		}
 	}
 }
 
