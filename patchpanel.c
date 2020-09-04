@@ -85,6 +85,7 @@ struct stream {
 #define NO_COMMAND_TIME   (100) // 100sec
 #define NO_CONNECTED_TIME (10)  // 10sec
 #define NO_ACTIVITY_TIME  (8 * 60 * 60) // 8h
+#define STATS_INTERVAL (3600)
 struct link links[MAX_LINKS];
 struct stream streams[MAX_STREAMS];
 
@@ -549,6 +550,25 @@ void init(void)
 	}
 }
 
+void show_stats(void)
+{
+	int nr_links = 0, nr_streams = 0;
+
+	for (int i = 0; i < MAX_LINKS; i++) {
+		struct link *lnk = &links[i];
+		if (lnk->name[0] == 0)
+			continue;
+		nr_links++;
+	}
+	for (int i = 0; i < MAX_STREAMS; i++) {
+		struct stream *strm = &streams[i];
+		if (strm->used == 0)
+			continue;
+		nr_streams++;
+	}
+	logf("stats %d links %d streams\n", nr_links, nr_streams);
+}
+
 int main(int argc, char **argv)
 {
 	char *laddr = ":8800";
@@ -563,8 +583,19 @@ int main(int argc, char **argv)
 		return 1;
 
 	init();
-	for (;;)
+
+	struct timeval tv_stats;
+	gettimeofday(&tv_stats, NULL);
+	for (;;) {
+		struct timeval now;
+		gettimeofday(&now, NULL);
+
+		if ((now.tv_sec - tv_stats.tv_sec) > STATS_INTERVAL) {
+			show_stats();
+			tv_stats = now;
+		}
 		mainloop(sock);
+	}
 
 	return 0;
 }
