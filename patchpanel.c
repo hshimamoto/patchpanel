@@ -297,8 +297,6 @@ void handle_request(struct link *lnk)
 		strm->right = lnk->sock;
 		gettimeofday(&strm->tv, NULL);
 		strm->connected = 1;
-		strm->bytes_l2r = 0;
-		strm->bytes_r2l = 0;
 		gettimeofday(&strm->tv_est, NULL);
 		logf("stream is established %s left %d right %d\n",
 				strm->name, strm->left, strm->right);
@@ -351,6 +349,8 @@ void handle_request(struct link *lnk)
 		strm->right = -1;
 		strm->connected = 0;
 		gettimeofday(&strm->tv, NULL);
+		strm->bytes_l2r = 0;
+		strm->bytes_r2l = 0;
 		// sock has been passed to stream
 		// prevent close at end
 		lnk->sock = -1;
