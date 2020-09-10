@@ -349,6 +349,7 @@ void handle_request(struct link *lnk)
 		strm->right = -1;
 		strm->connected = 0;
 		gettimeofday(&strm->tv, NULL);
+		gettimeofday(&strm->tv_est, NULL);
 		strm->bytes_l2r = 0;
 		strm->bytes_r2l = 0;
 		// sock has been passed to stream
