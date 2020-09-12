@@ -28,7 +28,7 @@ static inline void ldatetime(char *dt, int sz)
 	do { \
 		char dt[80]; \
 		ldatetime(dt, sizeof(dt)); \
-		fprintf(stderr, "%s ", dt); \
+		fprintf(stderr, "%s [%d] ", dt, getpid()); \
 		fprintf(stderr, __VA_ARGS__); \
 		fflush(stderr); \
 	} while (0)
