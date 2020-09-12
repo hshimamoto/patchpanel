@@ -178,15 +178,15 @@ void get_duration(char *buf, int n, struct timeval *prev)
 			ms += 1000;
 			duration++;
 		}
-		snprintf(buf, 32, "%d.%03ds", duration, ms);
+		snprintf(buf, n, "%d.%03ds", duration, ms);
 	} else if (duration < 3600) {
-		snprintf(buf, 32, "%dm", duration / 60);
+		snprintf(buf, n, "%dm", duration / 60);
 	} else if (duration < 12 * 3600) {
 		int h = duration / 3600;
 		int m = (duration / 60) % 60;
-		snprintf(buf, 32, "%dh %dm", h, m);
+		snprintf(buf, n, "%dh %dm", h, m);
 	} else {
-		snprintf(buf, 32, "%dh", duration / 3600);
+		snprintf(buf, n, "%dh", duration / 3600);
 	}
 }
 
