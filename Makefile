@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -O2 -Wall
+CFLAGS = -g -O2 -Wall -std=gnu11
 LDFLAGS = -g -O2
 
 all: patchpanel
