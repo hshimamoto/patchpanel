@@ -382,6 +382,10 @@ out:
 
 int transfer(struct stream *strm, int rfd, int wfd)
 {
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+
+	// transfer
 	char buf[4096];
 	int r = read(rfd, buf, 4096);
 	if (r <= 0)
@@ -389,7 +393,13 @@ int transfer(struct stream *strm, int rfd, int wfd)
 	int w = write(wfd, buf, r);
 	if (w <= 0)
 		return -1;
+
 	gettimeofday(&strm->tv, NULL);
+	// check elapsed time
+	if ((strm->tv.tv_sec - tv.tv_sec) > 3) {
+		logf("transfer %d->%d takes %ld sec\n",
+				rfd, wfd, strm->tv.tv_sec - tv.tv_sec);
+	}
 	return w;
 }
 
@@ -529,6 +539,15 @@ void mainloop(int s)
 			continue;
 		logf("no activity %s\n", strm->name);
 		close_stream(strm);
+	}
+
+	// check elapsed time
+	struct timeval tv_e;
+	gettimeofday(&tv_e, NULL);
+	if ((tv_e.tv_sec - tv.tv_sec) > 30) {
+		// show debug message
+		logf("handle streams takes too much (about %ld sec)\n",
+				tv_e.tv_sec - tv.tv_sec);
 	}
 }
 
