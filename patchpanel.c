@@ -365,6 +365,26 @@ out:
 		close_link(lnk);
 		return;
 	}
+	// LIST LINKS
+	if (strncmp(lnk->buf, "LIST LINKS\r\n", 12) == 0) {
+		lnk->sz = 0;
+		// replay all links
+		logf("LIST LINKS\n");
+		char resp[512];
+		int cnt = 0;
+		for (int i = 0; i < MAX_LINKS; i++) {
+			struct link *tmp = &links[i];
+			if (tmp->name[0] == 0 || tmp->name[0] == 1)
+				continue;
+			snprintf(resp, 512, "%s\r\n", tmp->name);
+			write(lnk->sock, resp, strlen(resp));
+			cnt++;
+		}
+		snprintf(resp, 512, "total %d links\r\n", cnt);
+		write(lnk->sock, resp, strlen(resp));
+		close_link(lnk);
+		return;
+	}
 	// Link keep alive
 	if (strncmp(lnk->buf, "KeepAlive\r\n", 11) == 0) {
 		lnk->sz = 0;
