@@ -63,6 +63,7 @@ struct link {
 	int sock;
 	struct timeval tv; // last
 	struct timeval tv_linked; // start of this link
+	struct sockaddr_in addr; // remote address
 	// temporary buffer
 	char buf[256];
 	int sz;
@@ -165,6 +166,7 @@ void new_connection(int s)
 	lnk->sz = 0;
 	gettimeofday(&lnk->tv, NULL);
 	gettimeofday(&lnk->tv_linked, NULL);
+	memcpy(&lnk->addr, &addr, sizeof(addr));
 }
 
 void get_duration(char *buf, int n, struct timeval *prev)
@@ -376,7 +378,14 @@ out:
 			struct link *tmp = &links[i];
 			if (tmp->name[0] == 0 || tmp->name[0] == 1)
 				continue;
-			snprintf(resp, 512, "%s\r\n", tmp->name);
+			char buf[32];
+			get_duration(buf, 32, &tmp->tv_linked);
+			snprintf(resp, 512,
+					"%s sock=%d (%s) from %s\r\n",
+					tmp->name,
+					tmp->sock,
+					buf,
+					inet_ntoa(tmp->addr.sin_addr));
 			write(lnk->sock, resp, strlen(resp));
 			cnt++;
 		}
