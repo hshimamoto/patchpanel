@@ -129,6 +129,52 @@ struct stream *find_stream(char *name)
 	return NULL;
 }
 
+void establish_stream(struct link *lnk, int enc)
+{
+	struct stream *strm = find_stream(lnk->name);
+	if (strm == NULL) {
+		logf("no waiting stream for %s\n", lnk->name);
+		close(lnk->sock);
+		lnk->name[0] = 0;
+		lnk->sock = -1;
+		return;
+	}
+	strm->right = lnk->sock;
+	gettimeofday(&strm->tv, NULL);
+	strm->connected = 1;
+	strm->enc = enc;
+	gettimeofday(&strm->tv_est, NULL);
+	logf("stream is established %s left %d right %d\n",
+			strm->name, strm->left, strm->right);
+	lnk->name[0] = 0;
+	lnk->sock = -1;
+	lnk->sz = 0;
+}
+
+void try_to_establish_stream(struct link *lnk, int pos, int enc)
+{
+	int ok = 0;
+
+	for (int i = pos; i < lnk->sz - 1; i++) {
+		if (lnk->buf[i] == '\r' && lnk->buf[i+1] == '\n') {
+			ok = 1;
+			lnk->name[i-pos] = 0;
+			break;
+		}
+		lnk->name[i-pos] = lnk->buf[i];
+	}
+	if (!ok) {
+		lnk->name[0] = 1;
+		return;
+	}
+
+	// use lnk->buf[:pos] for command name
+	lnk->buf[pos-1] = 0;
+	logf("%s %s\n", lnk->buf, lnk->name);
+
+	establish_stream(lnk, enc);
+}
+
 void new_connection(int s)
 {
 	struct sockaddr_in addr;
@@ -274,75 +320,11 @@ void handle_request(struct link *lnk)
 		return;
 	}
 	if (strncmp(lnk->buf, "CONNECTED ", 10) == 0) {
-		int ok = 0;
-		for (int i = 10; i < lnk->sz - 1; i++) {
-			if (lnk->buf[i] == '\r' && lnk->buf[i+1] == '\n') {
-				ok = 1;
-				lnk->name[i-10] = 0;
-				break;
-			}
-			lnk->name[i-10] = lnk->buf[i];
-		}
-		if (ok == 0) {
-			lnk->name[0] = 1;
-			return;
-		}
-		logf("CONNECTED %s\n", lnk->name);
-		// connect to stream
-		struct stream *strm = find_stream(lnk->name);
-		if (strm == NULL) {
-			logf("no waiting stream for %s\n", lnk->name);
-			close(lnk->sock);
-			lnk->name[0] = 0;
-			lnk->sock = -1;
-			return;
-		}
-		strm->right = lnk->sock;
-		gettimeofday(&strm->tv, NULL);
-		strm->connected = 1;
-		strm->enc = 0;
-		gettimeofday(&strm->tv_est, NULL);
-		logf("stream is established %s left %d right %d\n",
-				strm->name, strm->left, strm->right);
-		lnk->name[0] = 0;
-		lnk->sock = -1;
-		lnk->sz = 0;
+		try_to_establish_stream(lnk, 10, 0);
 		return;
 	}
 	if (strncmp(lnk->buf, "ECONNECTED ", 11) == 0) {
-		int ok = 0;
-		for (int i = 11; i < lnk->sz - 1; i++) {
-			if (lnk->buf[i] == '\r' && lnk->buf[i+1] == '\n') {
-				ok = 1;
-				lnk->name[i-11] = 0;
-				break;
-			}
-			lnk->name[i-11] = lnk->buf[i];
-		}
-		if (ok == 0) {
-			lnk->name[0] = 1;
-			return;
-		}
-		logf("ECONNECTED %s\n", lnk->name);
-		// connect to stream
-		struct stream *strm = find_stream(lnk->name);
-		if (strm == NULL) {
-			logf("no waiting stream for %s\n", lnk->name);
-			close(lnk->sock);
-			lnk->name[0] = 0;
-			lnk->sock = -1;
-			return;
-		}
-		strm->right = lnk->sock;
-		gettimeofday(&strm->tv, NULL);
-		strm->connected = 1;
-		strm->enc = 0x66;
-		gettimeofday(&strm->tv_est, NULL);
-		logf("estream is established %s left %d right %d\n",
-				strm->name, strm->left, strm->right);
-		lnk->name[0] = 0;
-		lnk->sock = -1;
-		lnk->sz = 0;
+		try_to_establish_stream(lnk, 11, 0x66);
 		return;
 	}
 	// CONNECT METHOD
