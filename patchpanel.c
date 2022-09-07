@@ -74,6 +74,7 @@ struct stream {
 	char name[256]; // keep name
 	int connected;
 	int left, right; // socket for Left side and Right side
+	int enc; // simple encryption
 	struct timeval tv;
 	// statistics
 	struct timeval tv_est; // established
@@ -299,8 +300,45 @@ void handle_request(struct link *lnk)
 		strm->right = lnk->sock;
 		gettimeofday(&strm->tv, NULL);
 		strm->connected = 1;
+		strm->enc = 0;
 		gettimeofday(&strm->tv_est, NULL);
 		logf("stream is established %s left %d right %d\n",
+				strm->name, strm->left, strm->right);
+		lnk->name[0] = 0;
+		lnk->sock = -1;
+		lnk->sz = 0;
+		return;
+	}
+	if (strncmp(lnk->buf, "ECONNECTED ", 11) == 0) {
+		int ok = 0;
+		for (int i = 11; i < lnk->sz - 1; i++) {
+			if (lnk->buf[i] == '\r' && lnk->buf[i+1] == '\n') {
+				ok = 1;
+				lnk->name[i-11] = 0;
+				break;
+			}
+			lnk->name[i-11] = lnk->buf[i];
+		}
+		if (ok == 0) {
+			lnk->name[0] = 1;
+			return;
+		}
+		logf("ECONNECTED %s\n", lnk->name);
+		// connect to stream
+		struct stream *strm = find_stream(lnk->name);
+		if (strm == NULL) {
+			logf("no waiting stream for %s\n", lnk->name);
+			close(lnk->sock);
+			lnk->name[0] = 0;
+			lnk->sock = -1;
+			return;
+		}
+		strm->right = lnk->sock;
+		gettimeofday(&strm->tv, NULL);
+		strm->connected = 1;
+		strm->enc = 0x66;
+		gettimeofday(&strm->tv_est, NULL);
+		logf("estream is established %s left %d right %d\n",
 				strm->name, strm->left, strm->right);
 		lnk->name[0] = 0;
 		lnk->sock = -1;
@@ -419,6 +457,10 @@ int transfer(struct stream *strm, int rfd, int wfd)
 	int r = read(rfd, buf, 4096);
 	if (r <= 0)
 		return -1;
+	if (strm->enc) {
+		for (int i = 0; i < r; i++)
+			buf[i] ^= strm->enc;
+	}
 	int w = write(wfd, buf, r);
 	if (w <= 0)
 		return -1;
