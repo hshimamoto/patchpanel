@@ -129,6 +129,48 @@ struct stream *find_stream(char *name)
 	return NULL;
 }
 
+void get_duration(char *buf, int n, struct timeval *prev)
+{
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	int duration = now.tv_sec - prev->tv_sec;
+	if (duration < 600) {
+		int ms = (now.tv_usec - prev->tv_usec) / 1000;
+		if (ms < 0) {
+			ms += 1000;
+			duration++;
+		}
+		snprintf(buf, n, "%d.%03ds", duration, ms);
+	} else if (duration < 3600) {
+		snprintf(buf, n, "%dm", duration / 60);
+	} else if (duration < 12 * 3600) {
+		int h = duration / 3600;
+		int m = (duration / 60) % 60;
+		snprintf(buf, n, "%dh %dm", h, m);
+	} else {
+		snprintf(buf, n, "%dh", duration / 3600);
+	}
+}
+
+void close_link(struct link *lnk)
+{
+	int sock = lnk->sock;
+	lnk->sock = -1;
+
+	if (sock == -1)
+		goto out;
+
+	char *name = lnk->name;
+	if (name[0] == 0 || name[0] == 1)
+		name = "-";
+	char buf[32];
+	get_duration(buf, 32, &lnk->tv_linked);
+	logf("close_link %s %d [%s]\n", name, sock, buf);
+	close(sock);
+out:
+	lnk->name[0] = 0;
+}
+
 void establish_stream(struct link *lnk, int enc)
 {
 	struct stream *strm = find_stream(lnk->name);
@@ -175,6 +217,69 @@ void try_to_establish_stream(struct link *lnk, int pos, int enc)
 	establish_stream(lnk, enc);
 }
 
+void try_to_connect(struct link *lnk, int pos, int enc)
+{
+	int ok = 0;
+
+	// Complete? CONNECT Request
+	for (int i = pos; i < lnk->sz - 3; i++) {
+		if (lnk->buf[i] == '\r' && lnk->buf[i+1] == '\n' &&
+		    lnk->buf[i+2] == '\r' && lnk->buf[i+3] == '\n') {
+			ok = 1;
+			break;
+		}
+		// CONNECT host:port HTTP ... CRLF CRLF
+		if (lnk->buf[i] == ':')
+			lnk->name[i-pos] = 0;
+		else
+			lnk->name[i-pos] = lnk->buf[i];
+	}
+	if (ok == 0) {
+		// not complete yet
+		lnk->name[0] = 1;
+		return;
+	}
+	// keep sock variable here to handle error and correct
+	int sock = lnk->sock;
+	char *resp = "HTTP/1.0 400 Bad Request\r\n\r\n";
+	// create stream
+	struct stream *strm = find_emptystream();
+	if (strm == NULL) {
+		logf("no empty stream slot\n");
+		goto out;
+	}
+	// copy request link name
+	strncpy(strm->name, lnk->name, 256);
+	logf("CONNECT %s\n", strm->name);
+	// clear to prevent that it hit in search
+	lnk->name[0] = 0;
+	struct link *rlnk = find_link(strm->name);
+	if (rlnk == NULL) {
+		logf("no such link %s\n", strm->name);
+		resp = "HTTP/1.0 404 Not found\r\n\r\n";
+		goto out;
+	}
+	strm->used = 1;
+	strm->left = sock;
+	strm->right = -1;
+	strm->connected = 0;
+	gettimeofday(&strm->tv, NULL);
+	gettimeofday(&strm->tv_est, NULL);
+	strm->bytes_l2r = 0;
+	strm->bytes_r2l = 0;
+	// sock has been passed to stream
+	// prevent close at end
+	lnk->sock = -1;
+	// send request
+	logf("request to %s %d\n", rlnk->name, rlnk->sock);
+	write(rlnk->sock, "NEW\r\n", 5);
+	// ok
+	resp = "HTTP/1.0 200 Established\r\n\r\n";
+out:
+	write(sock, resp, strlen(resp));
+	close_link(lnk);
+}
+
 void new_connection(int s)
 {
 	struct sockaddr_in addr;
@@ -214,48 +319,6 @@ void new_connection(int s)
 	gettimeofday(&lnk->tv, NULL);
 	gettimeofday(&lnk->tv_linked, NULL);
 	memcpy(&lnk->addr, &addr, sizeof(addr));
-}
-
-void get_duration(char *buf, int n, struct timeval *prev)
-{
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	int duration = now.tv_sec - prev->tv_sec;
-	if (duration < 600) {
-		int ms = (now.tv_usec - prev->tv_usec) / 1000;
-		if (ms < 0) {
-			ms += 1000;
-			duration++;
-		}
-		snprintf(buf, n, "%d.%03ds", duration, ms);
-	} else if (duration < 3600) {
-		snprintf(buf, n, "%dm", duration / 60);
-	} else if (duration < 12 * 3600) {
-		int h = duration / 3600;
-		int m = (duration / 60) % 60;
-		snprintf(buf, n, "%dh %dm", h, m);
-	} else {
-		snprintf(buf, n, "%dh", duration / 3600);
-	}
-}
-
-void close_link(struct link *lnk)
-{
-	int sock = lnk->sock;
-	lnk->sock = -1;
-
-	if (sock == -1)
-		goto out;
-
-	char *name = lnk->name;
-	if (name[0] == 0 || name[0] == 1)
-		name = "-";
-	char buf[32];
-	get_duration(buf, 32, &lnk->tv_linked);
-	logf("close_link %s %d [%s]\n", name, sock, buf);
-	close(sock);
-out:
-	lnk->name[0] = 0;
 }
 
 void close_stream(struct stream *strm)
@@ -329,62 +392,7 @@ void handle_request(struct link *lnk)
 	}
 	// CONNECT METHOD
 	if (strncmp(lnk->buf, "CONNECT ", 8) == 0) {
-		int ok = 0;
-		for (int i = 8; i < lnk->sz - 3; i++) {
-			if (lnk->buf[i] == '\r' && lnk->buf[i+1] == '\n' &&
-			    lnk->buf[i+2] == '\r' && lnk->buf[i+3] == '\n') {
-				ok = 1;
-				break;
-			}
-			// CONNECT host:port HTTP ... CRLF CRLF
-			if (lnk->buf[i] == ':')
-				lnk->name[i-8] = 0;
-			else
-				lnk->name[i-8] = lnk->buf[i];
-		}
-		if (ok == 0) {
-			lnk->name[0] = 1;
-			return;
-		}
-		// keep sock variable here to handle error and correct
-		int sock = lnk->sock;
-		char *resp = "HTTP/1.0 400 Bad Request\r\n\r\n";
-		// create stream
-		struct stream *strm = find_emptystream();
-		if (strm == NULL) {
-			logf("no empty stream slot\n");
-			goto out;
-		}
-		// copy request link name
-		strncpy(strm->name, lnk->name, 256);
-		logf("CONNECT %s\n", strm->name);
-		// clear to prevent that it hit in search
-		lnk->name[0] = 0;
-		struct link *rlnk = find_link(strm->name);
-		if (rlnk == NULL) {
-			logf("no such link %s\n", strm->name);
-			resp = "HTTP/1.0 404 Not found\r\n\r\n";
-			goto out;
-		}
-		strm->used = 1;
-		strm->left = sock;
-		strm->right = -1;
-		strm->connected = 0;
-		gettimeofday(&strm->tv, NULL);
-		gettimeofday(&strm->tv_est, NULL);
-		strm->bytes_l2r = 0;
-		strm->bytes_r2l = 0;
-		// sock has been passed to stream
-		// prevent close at end
-		lnk->sock = -1;
-		// send request
-		logf("request to %s %d\n", rlnk->name, rlnk->sock);
-		write(rlnk->sock, "NEW\r\n", 5);
-		// ok
-		resp = "HTTP/1.0 200 Established\r\n\r\n";
-out:
-		write(sock, resp, strlen(resp));
-		close_link(lnk);
+		try_to_connect(lnk, 8, 0);
 		return;
 	}
 	// LIST LINKS
