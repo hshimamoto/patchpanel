@@ -184,7 +184,7 @@ void establish_stream(struct link *lnk, int enc)
 	strm->right = lnk->sock;
 	gettimeofday(&strm->tv, NULL);
 	strm->connected = 1;
-	strm->enc = enc;
+	strm->enc ^= enc; // toggle
 	gettimeofday(&strm->tv_est, NULL);
 	logf("stream is established %s left %d right %d\n",
 			strm->name, strm->left, strm->right);
@@ -262,6 +262,7 @@ void try_to_connect(struct link *lnk, int pos, int enc)
 	strm->used = 1;
 	strm->left = sock;
 	strm->right = -1;
+	strm->enc = enc;
 	strm->connected = 0;
 	gettimeofday(&strm->tv, NULL);
 	gettimeofday(&strm->tv_est, NULL);
@@ -393,6 +394,11 @@ void handle_request(struct link *lnk)
 	// CONNECT METHOD
 	if (strncmp(lnk->buf, "CONNECT ", 8) == 0) {
 		try_to_connect(lnk, 8, 0);
+		return;
+	}
+	// ECONNECT METHOD
+	if (strncmp(lnk->buf, "ECONNECT ", 9) == 0) {
+		try_to_connect(lnk, 9, 0x66);
 		return;
 	}
 	// LIST LINKS
